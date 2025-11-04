@@ -1,12 +1,15 @@
 export interface PriceBar {
-  date: string;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  adjClose: number;
-  nextOpen: number | null;
+  Date: string;
+  Open: number;
+  High: number;
+  Low: number;
+  Close: number;
+  AdjClose: number;
+  Volume: number;
+  NextOpen: number | null;
 }
+
+type RawPriceRow = Record<string, string | number | null | undefined>;
 
 export interface Trade {
   entryDate: string;
@@ -40,73 +43,9 @@ export interface BacktestResult {
   priceHistory: PriceBar[];
 }
 
-const SYMBOL_METADATA: Record<string, { name: string; basePrice: number; drift: number }> = {
-  NHY: { name: "Norsk Hydro", basePrice: 70, drift: 0.0015 },
-  EQNR: { name: "Equinor", basePrice: 300, drift: 0.001 },
-  AKER: { name: "Aker ASA", basePrice: 800, drift: 0.0008 },
-};
-
 const INITIAL_EQUITY = 100_000;
 const FAST_LENGTH = 5;
 const SLOW_LENGTH = 15;
-
-function mulberry32(seed: number): () => number {
-  return () => {
-    seed |= 0;
-    seed = (seed + 0x6d2b79f5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function randomNormal(rng: () => number): number {
-  const u1 = Math.max(rng(), 1e-12);
-  const u2 = rng();
-  return Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
-}
-
-function seedForSymbol(symbol: string): number {
-  const seeds: Record<string, number> = { NHY: 11, EQNR: 23, AKER: 37 };
-  return seeds[symbol] ?? 1;
-}
-
-export function generatePriceHistory(symbol: string, periods = 156): PriceBar[] {
-  const meta = SYMBOL_METADATA[symbol] ?? { name: symbol, basePrice: 100, drift: 0.001 };
-  const rng = mulberry32(seedForSymbol(symbol));
-  const vol = 0.03;
-  const today = new Date();
-  const oneWeek = 7 * 24 * 60 * 60 * 1000;
-
-  const prices: number[] = [];
-  let cumulative = 0;
-  for (let i = 0; i < periods; i += 1) {
-    const logReturn = meta.drift + vol * randomNormal(rng);
-    cumulative += logReturn;
-    prices.push(meta.basePrice * Math.exp(cumulative));
-  }
-
-  const result: PriceBar[] = [];
-  for (let i = 0; i < periods; i += 1) {
-    const date = new Date(today.getTime() - (periods - i) * oneWeek);
-    const close = prices[i];
-    const prevClose = i > 0 ? prices[i - 1] : close;
-    const open = prevClose * (1 + 0.002 * randomNormal(rng));
-    const high = Math.max(open, close) * (1 + 0.01 * rng());
-    const low = Math.min(open, close) * (1 - 0.01 * rng());
-    const nextOpen = i + 1 < periods ? prices[i + 1] * (1 + 0.001 * randomNormal(rng)) : null;
-    result.push({
-      date: date.toISOString().slice(0, 10),
-      open,
-      high,
-      low,
-      close,
-      adjClose: close,
-      nextOpen,
-    });
-  }
-  return result;
-}
 
 function simpleMovingAverage(series: number[], index: number, period: number): number {
   const start = Math.max(0, index - period + 1);
@@ -119,9 +58,75 @@ function formatNumber(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-export function runSmaBacktest(symbol: string): BacktestResult {
-  const priceHistory = generatePriceHistory(symbol);
-  const closes = priceHistory.map((bar) => bar.adjClose);
+const normalizeDate = (value: unknown): string => {
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+      return normalized;
+    }
+    const parsed = new Date(normalized);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toISOString().slice(0, 10);
+    }
+  }
+  throw new Error(`Invalid timestamp value: ${String(value)}`);
+};
+
+const normalizeNumber = (value: unknown, field: string): number => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      throw new Error(`Missing numeric value for ${field}`);
+    }
+    const parsed = Number(trimmed);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  throw new Error(`Invalid numeric value for ${field}`);
+};
+
+const normalizeRow = (row: RawPriceRow): Omit<PriceBar, "NextOpen"> => {
+  const date = normalizeDate(row.Date ?? row.date ?? row.timestamp ?? row.Timestamp ?? null);
+  return {
+    Date: date,
+    Open: normalizeNumber(row.Open ?? row.open, "Open"),
+    High: normalizeNumber(row.High ?? row.high, "High"),
+    Low: normalizeNumber(row.Low ?? row.low, "Low"),
+    Close: normalizeNumber(row.Close ?? row.close, "Close"),
+    AdjClose: normalizeNumber(row["Adj Close"] ?? row.adjClose ?? row.AdjClose, "Adj Close"),
+    Volume: normalizeNumber(row.Volume ?? row.volume ?? 0, "Volume"),
+  };
+};
+
+type PriceHistoryResponse = {
+  symbol: string;
+  name: string;
+  history: RawPriceRow[];
+};
+
+async function fetchPriceHistory(symbol: string): Promise<{ name: string; history: PriceBar[] }> {
+  const response = await fetch(`/api/ohlcv/${encodeURIComponent(symbol)}`);
+  if (!response.ok) {
+    throw new Error(`Failed to download price history (${response.status})`);
+  }
+  const payload = (await response.json()) as PriceHistoryResponse;
+  const normalized = payload.history
+    .map((row) => normalizeRow(row))
+    .sort((a, b) => (a.Date < b.Date ? -1 : a.Date > b.Date ? 1 : 0));
+  const history: PriceBar[] = normalized.map((row, index) => ({
+    ...row,
+    NextOpen: index + 1 < normalized.length ? normalized[index + 1].Open : null,
+  }));
+  return { name: payload.name, history };
+}
+
+export async function runSmaBacktest(symbol: string): Promise<BacktestResult> {
+  const { history: priceHistory, name } = await fetchPriceHistory(symbol);
+  const closes = priceHistory.map((bar) => bar.AdjClose);
 
   let cash = INITIAL_EQUITY;
   let shares = 0;
@@ -142,23 +147,23 @@ export function runSmaBacktest(symbol: string): BacktestResult {
     const crossoverUp = fast > slow && prevFast <= prevSlow;
     const crossoverDown = fast < slow && prevFast >= prevSlow;
 
-    if (!havePosition && crossoverUp && bar.nextOpen) {
+    if (!havePosition && crossoverUp && bar.NextOpen) {
       const investableCash = cash * 0.95; // keep small buffer
-      shares = Math.max(Math.floor(investableCash / bar.nextOpen), 0);
+      shares = Math.max(Math.floor(investableCash / bar.NextOpen), 0);
       if (shares > 0) {
-        cash -= shares * bar.nextOpen;
-        entryPrice = bar.nextOpen;
-        entryDate = bar.date;
+        cash -= shares * bar.NextOpen;
+        entryPrice = bar.NextOpen;
+        entryDate = bar.Date;
       }
-    } else if (havePosition && (crossoverDown || bar.nextOpen === null)) {
-      const exitPrice = bar.nextOpen ?? bar.close;
+    } else if (havePosition && (crossoverDown || bar.NextOpen === null)) {
+      const exitPrice = bar.NextOpen ?? bar.Close;
       const proceeds = shares * exitPrice;
       const cost = shares * entryPrice;
       const pnl = proceeds - cost;
       cash += proceeds;
       trades.push({
         entryDate,
-        exitDate: bar.date,
+        exitDate: bar.Date,
         entryPrice: formatNumber(entryPrice),
         exitPrice: formatNumber(exitPrice),
         shares,
@@ -169,8 +174,8 @@ export function runSmaBacktest(symbol: string): BacktestResult {
       entryPrice = 0;
     }
 
-    const markToMarket = cash + shares * bar.close;
-    equityCurve.push({ Date: bar.date, Equity: formatNumber(markToMarket) });
+    const markToMarket = cash + shares * bar.Close;
+    equityCurve.push({ Date: bar.Date, Equity: formatNumber(markToMarket) });
   }
 
   const initialEquity = equityCurve[0]?.Equity ?? INITIAL_EQUITY;
@@ -178,11 +183,9 @@ export function runSmaBacktest(symbol: string): BacktestResult {
   const totalReturn = initialEquity ? ((finalEquity - initialEquity) / initialEquity) * 100 : 0;
   const wins = trades.filter((trade) => trade.pnl > 0).length;
 
-  const metadata = SYMBOL_METADATA[symbol] ?? { name: symbol, basePrice: 100, drift: 0.001 };
-
   return {
     symbol,
-    name: metadata.name,
+    name,
     summary: {
       initialEquity: formatNumber(initialEquity),
       finalEquity: formatNumber(finalEquity),
