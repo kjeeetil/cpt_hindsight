@@ -104,6 +104,67 @@ button:not(:disabled):hover {
   font-weight: 600;
 }
 
+.card-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.card-header h3 {
+  margin: 0;
+}
+
+.chart-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.chart-controls select {
+  min-width: 140px;
+}
+
+.strategy-toggle {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  border: 1px solid #d2d6dc;
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+}
+
+.strategy-toggle legend {
+  padding: 0 0.25rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.strategy-toggle label {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+  font-weight: 500;
+}
+
+.chart-grid {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.chart-panel h4 {
+  margin: 0 0 0.75rem 0;
+}
+
+.chart-wrapper {
+  position: relative;
+  min-height: 280px;
+}
+
 .table-wrapper {
   overflow-x: auto;
 }
@@ -150,8 +211,19 @@ th {
     align-items: stretch;
   }
 
+  .card-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
   select,
   button {
     width: 100%;
+  }
+
+  .strategy-toggle {
+    width: 100%;
+    justify-content: space-between;
   }
 }
