@@ -1,0 +1,23 @@
+{
+  "name": "cpt_hindsight",
+  "version": "1.0.0",
+  "description": "Client SPA build tooling for CPT Hindsight",
+  "main": "index.js",
+  "scripts": {
+    "build": "esbuild app/static/src/main.tsx --bundle --minify --format=esm --sourcemap --outfile=app/static/dist/assets/main.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "esbuild": "^0.25.12",
+    "typescript": "^5.9.3"
+  }
+}

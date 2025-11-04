@@ -2,91 +2,65 @@
 
 Overview
 --------
-CPT Hindsight is a small web application project that allows users to select stocks traded on the Oslo Stock Exchange and run backtests of trading strategies entirely in the browser (client-side processing). The app provides a set of basic trading strategies, lets the user choose a historical period for backtesting, and returns a trade summary plus a comparison between chosen strategy(ies) and a simple buy-and-hold benchmark. Plotting and visual summaries are integrated to make the comparison intuitive.
+CPT Hindsight is a FastAPI + React project for exploring trading strategies on a curated set of Oslo Stock Exchange tickers. The backend exposes a lightweight API, serves a compiled single-page application (SPA), and remains the source of truth for server-side calculations. The SPA, written in TypeScript, mirrors the minimal SMA crossover logic so that users can prototype in the browser while still having access to authoritative server computations.
 
 Key goals
-- Client-side processing of historical price data to keep the app responsive and avoid server overhead.
-- A small set of well-documented baseline strategies for quick experimentation (e.g., moving-average crossover, RSI threshold, momentum).
-- Clear comparison vs buy-and-hold to show value added by strategies.
-- Interactive plotting of price series, trades, equity curves and simple performance metrics.
+- API-first backend that can perform canonical strategy calculations and stream static metadata to clients.
+- React/Vite-style SPA hosted under `app/static/dist/` that keeps the UI responsive without page reloads.
+- Client-side TypeScript modules that reproduce the simple SMA crossover simulation for fast iteration.
+- Clear separation between frontend presentation, local simulation utilities, and server endpoints.
+- Smooth upgrade path toward more advanced strategies or heavier server-side workloads.
 
-Core features (MVP)
-- Stock selector populated with a curated list of OSE tickers.
-- Period selector: start/end dates and preset ranges (1M, 3M, 6M, 1Y, max).
-- Strategy selector: choose one or multiple strategies from the built-in list.
-- Backtest runner (client-side): compute signals, execute simulated trades, track PnL and portfolio equity.
-- Summary report: trade list, win/loss, max drawdown, CAGR (or equivalent), and comparison table vs buy-and-hold.
-- Plots: price chart with trade markers, equity curves for each strategy and buy-and-hold, and basic performance charts.
-- Export: download trades and summary as CSV.
+Architecture
+------------
+- **Backend**: FastAPI application (`app/main.py`) that mounts compiled assets under `/static`, serves the SPA entry point on `/`, and exposes JSON endpoints under `/api/*`.
+  - `/api/symbols` returns the curated ticker list.
+  - `/api/backtest` keeps the legacy Python backtester available for server-side parity or heavier workloads.
+  - `/healthz` is retained for deployment probes.
+- **Frontend**: React SPA bundled with esbuild. Source files live in `app/static/src/` and compile into `app/static/dist/` via `npm run build`.
+- **Simulation utilities**: `app/static/src/sma.ts` ports the minimal SMA crossover strategy to TypeScript so the browser can generate synthetic data, run the crossover logic locally, and render the results without waiting on the API.
 
-Design notes
-- Processing on the user side (browser) enables instant interactivity and simplifies hosting; price data can be fetched via API or pre-downloaded CSVs.
-- The existing engine.py contains the basic computation and plotting logic. For the web app we will:
-  - Keep engine.py as a canonical reference implementation for calculations.
-  - Refactor its core logic into small, pure functions that can be ported to JavaScript/TypeScript for client execution (or run via Pyodide if Python-in-browser is desired).
-- UI will be a single-page application (SPA) with reactive components to run backtests and render plots without page reloads.
+State management & UX
+---------------------
+- The SPA fetches tickers once, stores them in local state, and re-runs the TypeScript backtester whenever the selection changes.
+- Loading states, optimistic updates, and error messaging are handled via React state hooks, keeping the interface responsive without page reloads.
+- The UI surfaces headline metrics, an equity preview, and a trade table that mirror the previous HTML prototype while adopting a modern card layout.
 
-Basic strategies (initial set)
-- Buy & Hold (benchmark)
-- Simple Moving Average (SMA) crossover (fast/slow)
-- Exponential Moving Average (EMA) crossover
-- Relative Strength Index (RSI) threshold strategy (overbought/oversold)
-- Momentum (price change over N days)
-- Volatility breakout (ATR-based) — optional for later
+Development workflow
+--------------------
+1. Install Node.js dependencies once: `npm install`.
+2. Build the frontend bundle: `npm run build` (outputs to `app/static/dist/assets`).
+3. Run the API locally: `uvicorn app.main:app --port 8080 --reload`.
+4. Navigate to `http://localhost:8080` — the SPA loads, fetches `/api/symbols`, and executes the SMA backtest locally.
+
+Backtesting strategies
+----------------------
+- **Simple Moving Average (SMA) crossover**: Implemented in Python (`app/backtester.py`) and TypeScript (`app/static/src/sma.ts`).
+- Future strategies can be added on the server for canonical results and selectively ported to TypeScript for in-browser experimentation.
 
 Roadmap (prioritized)
-1. MVP (1–2 sprints)
-   - Deliverable: single-page UI that can select ticker + period, run one strategy, show trade list + equity curve + buy-and-hold comparison.
-   - Tasks:
-     - Create minimal UI (ticker selector, date picker, strategy dropdown, run button).
-     - Implement client-side data loader (CSV or API wrapper).
-     - Port a minimal calculation engine for SMA crossover + buy-and-hold into the client.
-     - Add plotting (e.g., Chart.js, Plotly or lightweight D3 wrappers).
-     - Basic tests and sample datasets.
-
-2. Strategy library & multi-strategy comparison (1 sprint)
-   - Deliverable: 4–5 strategies implemented, allow batch runs and overlay comparisons.
-   - Tasks:
-     - Implement EMA, RSI, momentum strategies client-side.
-     - Batch execution and normalized equity-curve plotting.
-     - Tabulated comparison metrics and per-trade export.
-
-3. UX improvements & parameter tuning (1 sprint)
-   - Deliverable: parameter inputs for each strategy, presets, and a simple optimizer UI for parameter sweep.
-   - Tasks:
-     - Strategy parameter forms and validation.
-     - Parallel runs for parameter grids (client-side compute considerations).
-     - Caching of computed results for faster re-runs.
-
-4. Refactor engine.py into web-centric modules (1–2 sprints)
-   - Deliverable: engine split into small pure functions and reference implementations for Python and JS.
-   - Tasks:
-     - Extract signal-generation and trade-execution logic to independent functions with clear I/O.
-     - Add comprehensive unit tests for the Python reference functions.
-     - Implement or document JS/TS ports of core functions (optionally using Pyodide for Python-in-browser fallback).
-
-5. Advanced features (later)
-   - Performance metrics expansion (Sharpe, Sortino), transaction costs and slippage models, multi-asset portfolios, position sizing rules, and strategy persistence/sharing.
-   - Consider server-side compute for heavy parameter sweeps or long histories if client becomes limiting.
+1. **MVP hardening**
+   - Enrich result visualizations (charts, overlays) while keeping the SPA responsive.
+   - Expand test coverage for the TypeScript modules and Python API endpoints.
+2. **Strategy library expansion**
+   - Add EMA, RSI, and momentum strategies to the Python engine first, then port reusable pieces to TypeScript as needed.
+   - Support parameter inputs with synchronized validation between client and server.
+3. **Server-side compute enhancements**
+   - Introduce queueable backtests for longer histories or parameter sweeps, returning job metadata through the API.
+   - Cache canonical results so the SPA can reconcile local simulations with authoritative server-side outputs.
+4. **Collaboration & persistence**
+   - Allow saving strategy presets, sharing links, and exporting results.
 
 Implementation notes & recommendations
-- Data format: standardized OHLCV CSV or JSON with timestamp, open, high, low, close, volume columns.
-- Time zone handling: normalize timestamps to a consistent timezone before backtesting.
-- Trading assumptions: define trade execution rules clearly (next-bar open, close, or intraday assumptions) and include transaction cost parameters.
-- Plotting: show trade markers (buy/sell) on price chart and separate equity-curve plot for clarity; include simple tooltips.
-- Performance: for large datasets consider web workers to keep UI thread responsive.
-
-How to proceed now
-- Use the README to align contributors on scope and immediate next steps (MVP).
-- Begin by extracting minimal functions from engine.py for SMA crossover and buy-and-hold; implement a small SPA UI to call those functions with sample CSV data.
-- Track progress against the roadmap, keeping the engine.py refactor as an explicit milestone.
-
-License & contribution
-- Add your preferred license and contribution guidelines in repo root when ready. Keep the readme focused on scope and roadmap for now.
+- Data format: synthetic weekly OHLC data is generated deterministically in both Python and TypeScript for consistency.
+- Time zone handling: normalize timestamps to a consistent timezone before performing calculations.
+- Trading assumptions: execution happens on the following week's open price with a simple position-sizing heuristic; extend both implementations in tandem when refining the model.
+- Plotting: consider integrating lightweight charting libraries (e.g., `visx`, `Recharts`) once richer visualization is required.
+- Performance: web workers or server jobs should handle heavier parameter sweeps; the current SPA keeps interactions instant for a single symbol.
 
 Deployment (Google Cloud)
 -------------------------
-The repository now includes a minimal container + Cloud Build scaffold for deploying the API skeleton to Cloud Run.
+The repository includes a minimal container + Cloud Build scaffold for deploying the API skeleton to Cloud Run.
 
 1. Create the Artifact Registry repository and Cloud Run service ahead of time:
    ```
@@ -122,6 +96,6 @@ Adjust the substitutions to match your project naming, and update the `_MAX_IMAG
 Web demo (local)
 ----------------
 - Run `uvicorn app.main:app --port 8080 --reload`.
-- Open `http://localhost:8080` and pick one of the pre-configured Oslo Bors tickers (Norsk Hydro, Equinor or Aker ASA).
-- The app generates synthetic weekly OHLC prices, builds simple SMA-crossover signals, and feeds them into `engine.backtest_weekly`.
-- You will see a summary, the latest equity-curve points, and the table of completed trades returned by the engine.
+- Open `http://localhost:8080` and select a ticker from the dropdown.
+- The SPA fetches the ticker metadata, runs the TypeScript SMA backtest locally, and renders summary metrics, a rolling equity snapshot, and the trade table.
+- To cross-check results against the Python implementation, submit a POST request to `/api/backtest` with `{ "symbol": "NHY" }` and compare the payloads.
