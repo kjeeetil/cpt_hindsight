@@ -108,6 +108,10 @@ type PriceHistoryResponse = {
   history: RawPriceRow[];
 };
 
+type PendingOrder =
+  | { type: "buy"; date: string; price: number; shares: number }
+  | { type: "sell"; date: string; price: number; shares: number };
+
 async function fetchPriceHistory(symbol: string): Promise<{ name: string; history: PriceBar[] }> {
   const response = await fetch(`/api/ohlcv/${encodeURIComponent(symbol)}`);
   if (!response.ok) {
@@ -135,9 +139,39 @@ export async function runSmaBacktest(symbol: string): Promise<BacktestResult> {
 
   const trades: Trade[] = [];
   const equityCurve: EquityPoint[] = [];
+  let pendingOrder: PendingOrder | null = null;
 
   for (let i = 0; i < priceHistory.length; i += 1) {
     const bar = priceHistory[i];
+    if (pendingOrder && pendingOrder.date === bar.Date) {
+      if (pendingOrder.type === "buy") {
+        const cost = pendingOrder.shares * pendingOrder.price;
+        cash -= cost;
+        shares += pendingOrder.shares;
+        entryPrice = pendingOrder.price;
+        entryDate = pendingOrder.date;
+      } else {
+        const exitPrice = pendingOrder.price;
+        const proceeds = pendingOrder.shares * exitPrice;
+        const costBasis = pendingOrder.shares * entryPrice;
+        const pnl = proceeds - costBasis;
+        cash += proceeds;
+        trades.push({
+          entryDate,
+          exitDate: pendingOrder.date,
+          entryPrice: formatNumber(entryPrice),
+          exitPrice: formatNumber(exitPrice),
+          shares: pendingOrder.shares,
+          pnl: formatNumber(pnl),
+          returnPct: formatNumber(costBasis > 0 ? (pnl / costBasis) * 100 : 0),
+        });
+        shares = Math.max(shares - pendingOrder.shares, 0);
+        entryPrice = 0;
+        entryDate = "";
+      }
+      pendingOrder = null;
+    }
+    const nextBar = priceHistory[i + 1];
     const fast = simpleMovingAverage(closes, i, FAST_LENGTH);
     const slow = simpleMovingAverage(closes, i, SLOW_LENGTH);
     const prevFast = i > 0 ? simpleMovingAverage(closes, i - 1, FAST_LENGTH) : fast;
@@ -147,35 +181,56 @@ export async function runSmaBacktest(symbol: string): Promise<BacktestResult> {
     const crossoverUp = fast > slow && prevFast <= prevSlow;
     const crossoverDown = fast < slow && prevFast >= prevSlow;
 
-    if (!havePosition && crossoverUp && bar.NextOpen) {
-      const investableCash = cash * 0.95; // keep small buffer
-      shares = Math.max(Math.floor(investableCash / bar.NextOpen), 0);
-      if (shares > 0) {
-        cash -= shares * bar.NextOpen;
-        entryPrice = bar.NextOpen;
-        entryDate = bar.Date;
+    if (!pendingOrder && nextBar) {
+      if (!havePosition && crossoverUp) {
+        const entryPriceCandidate = nextBar.Open;
+        const investableCash = cash * 0.95; // keep small buffer
+        const plannedShares = Math.max(Math.floor(investableCash / entryPriceCandidate), 0);
+        if (plannedShares > 0) {
+          pendingOrder = {
+            type: "buy",
+            date: nextBar.Date,
+            price: entryPriceCandidate,
+            shares: plannedShares,
+          };
+        }
+      } else if (havePosition && crossoverDown) {
+        pendingOrder = {
+          type: "sell",
+          date: nextBar.Date,
+          price: nextBar.Open,
+          shares,
+        };
       }
-    } else if (havePosition && (crossoverDown || bar.NextOpen === null)) {
-      const exitPrice = bar.NextOpen ?? bar.Close;
-      const proceeds = shares * exitPrice;
-      const cost = shares * entryPrice;
-      const pnl = proceeds - cost;
-      cash += proceeds;
-      trades.push({
-        entryDate,
-        exitDate: bar.Date,
-        entryPrice: formatNumber(entryPrice),
-        exitPrice: formatNumber(exitPrice),
-        shares,
-        pnl: formatNumber(pnl),
-        returnPct: formatNumber(cost > 0 ? (pnl / cost) * 100 : 0),
-      });
-      shares = 0;
-      entryPrice = 0;
     }
 
     const markToMarket = cash + shares * bar.Close;
     equityCurve.push({ Date: bar.Date, Equity: formatNumber(markToMarket) });
+  }
+
+  if (shares > 0) {
+    const lastBar = priceHistory[priceHistory.length - 1];
+    const exitPrice = lastBar.Close;
+    const proceeds = shares * exitPrice;
+    const cost = shares * entryPrice;
+    const pnl = proceeds - cost;
+    cash += proceeds;
+    trades.push({
+      entryDate,
+      exitDate: lastBar.Date,
+      entryPrice: formatNumber(entryPrice),
+      exitPrice: formatNumber(exitPrice),
+      shares,
+      pnl: formatNumber(pnl),
+      returnPct: formatNumber(cost > 0 ? (pnl / cost) * 100 : 0),
+    });
+    shares = 0;
+    entryPrice = 0;
+    entryDate = "";
+    equityCurve[equityCurve.length - 1] = {
+      Date: lastBar.Date,
+      Equity: formatNumber(cash),
+    };
   }
 
   const initialEquity = equityCurve[0]?.Equity ?? INITIAL_EQUITY;

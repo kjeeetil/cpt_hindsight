@@ -194,7 +194,7 @@ const StrategyCharts: React.FC<StrategyChartsProps> = ({
     const datasets: ChartDataset<"line", { x: string; y: number }[]>[] = [
       {
         label: `${symbol} price`,
-        data: priceHistory.map((bar) => ({ x: bar.date, y: roundToTwoDecimals(bar.adjClose) })),
+        data: priceHistory.map((bar) => ({ x: bar.Date, y: roundToTwoDecimals(bar.AdjClose) })),
         borderColor: "#2563eb",
         backgroundColor: "rgba(37, 99, 235, 0.1)",
         pointRadius: 0,
@@ -205,7 +205,7 @@ const StrategyCharts: React.FC<StrategyChartsProps> = ({
     ];
 
     if (visibility.strategy) {
-      const inRangeDates = new Set(priceHistory.map((bar) => bar.date));
+      const inRangeDates = new Set(priceHistory.map((bar) => bar.Date));
       const buys = trades
         .filter((trade) => inRangeDates.has(trade.entryDate))
         .map((trade) => ({ x: trade.entryDate, y: trade.entryPrice }));
@@ -469,13 +469,13 @@ export const App: React.FC = () => {
       return [];
     }
     const initialEquity = result.summary.initialEquity ?? result.equityCurve[0]?.Equity ?? 0;
-    const firstPrice = result.priceHistory[0]?.adjClose ?? 0;
+    const firstPrice = result.priceHistory[0]?.AdjClose ?? 0;
     if (!initialEquity || !firstPrice) {
       return [];
     }
     return result.priceHistory.map((bar) => ({
-      Date: bar.date,
-      Equity: roundToTwoDecimals((bar.adjClose / firstPrice) * initialEquity),
+      Date: bar.Date,
+      Equity: roundToTwoDecimals((bar.AdjClose / firstPrice) * initialEquity),
     }));
   }, [result]);
 
@@ -510,7 +510,7 @@ export const App: React.FC = () => {
     if (!result) {
       return [];
     }
-    const inRangeDates = new Set(filteredPriceHistory.map((bar) => bar.date));
+    const inRangeDates = new Set(filteredPriceHistory.map((bar) => bar.Date));
     return result.trades.filter(
       (trade) => inRangeDates.has(trade.entryDate) || inRangeDates.has(trade.exitDate),
     );
