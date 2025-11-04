@@ -76,6 +76,7 @@ def get_market_data(request: MarketDataRequest) -> JSONResponse:
             "interval": request.interval,
             "dataPoints": request.data_points,
             "data": dataset,
+        })
 def _load_history(symbol: str) -> list[dict[str, object]]:
     csv_path = DATA_DIR / f"{symbol}.csv"
     if not csv_path.exists():
