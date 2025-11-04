@@ -93,7 +93,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             const curvePoints = data.equity_curve.slice(-5);
 
             const summaryHtml = `
-                <h2>${{data.name}} (${data.symbol})</h2>
+                <h2>${{data.name}} (${{data.symbol}})</h2>
                 <p>
                     Final equity: <strong>${{summary.final_equity.toLocaleString(undefined, {{maximumFractionDigits: 2}})}} NOK</strong><br/>
                     Total return: <strong>${{summary.total_return_pct}}%</strong><br/>
@@ -109,7 +109,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                         </tr>
                     </thead>
                     <tbody>
-                        ${trades.map(t => `
+                        ${{trades.map(t => `
                             <tr>
                                 <td>${{t.entry_date}}</td>
                                 <td>${{t.exit_date}}</td>
@@ -207,7 +207,7 @@ def index() -> HTMLResponse:
                 const curvePoints = data.equity_curve.slice(-5);
 
                 const summaryHtml = `
-                    <h2>${{data.name}} (${data.symbol})</h2>
+                <h2>${{data.name}} (${{data.symbol}})</h2>
                     <p>
                         Final equity: <strong>${{summary.final_equity.toLocaleString(undefined, {{maximumFractionDigits: 2}})}} NOK</strong><br/>
                         Total return: <strong>${{summary.total_return_pct}}%</strong><br/>
