@@ -16,7 +16,6 @@ import {
 import "chartjs-adapter-date-fns";
 import { Line } from "react-chartjs-2";
 import type { BacktestResult, EquityPoint, PriceBar } from "./sma";
-import { runSmaBacktest } from "./sma";
 
 ChartJS.register(
   CategoryScale,
@@ -58,8 +57,6 @@ const TIME_UNIT_BY_RANGE: Record<DateRangeKey, "week" | "month" | "quarter" | "y
   max: "quarter",
 };
 
-type SymbolInfo = { symbol: string; name: string };
-
 type LoadState = "idle" | "loading" | "success" | "error";
 
 type FetchError = { message: string };
@@ -84,9 +81,17 @@ type MarketDataResponse = {
   data: Record<string, MarketDataRow[]>;
 };
 
+type BacktestRequestPayload = {
+  ticker: string;
+  startDate: string;
+  endDate: string;
+  interval: string;
+};
+
 const DATA_POINT_OPTIONS = ["Open", "High", "Low", "Close", "Adj Close", "Volume"];
 const PERIOD_OPTIONS = ["1mo", "3mo", "6mo", "1y", "2y", "5y", "ytd", "max"];
 const INTERVAL_OPTIONS = ["1d", "1wk", "1mo"];
+const BACKTEST_INTERVAL = "1d";
 
 const formatNumber = (value: number | undefined, fractionDigits = 2): string => {
   if (typeof value !== "number" || Number.isNaN(value)) {
@@ -105,6 +110,68 @@ const renderDataValue = (value: number | string | undefined): string => {
   return "-";
 };
 const roundToTwoDecimals = (value: number): number => Math.round(value * 100) / 100;
+
+const padNumber = (value: number): string => value.toString().padStart(2, "0");
+
+const formatIsoDate = (date: Date): string => {
+  return `${date.getFullYear()}-${padNumber(date.getMonth() + 1)}-${padNumber(date.getDate())}`;
+};
+
+const parseBacktestRange = (value: string): { startDate: string; endDate: string } => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error(
+      "Provide a ticker and range like '2023-01-01 to 2023-12-31' or a relative period such as '1y'.",
+    );
+  }
+
+  const explicitDates = trimmed.match(/\d{4}-\d{2}-\d{2}/g);
+  if (explicitDates && explicitDates.length >= 2) {
+    const [start, end] = explicitDates;
+    if (start > end) {
+      throw new Error("Start date must be before the end date.");
+    }
+    return { startDate: start, endDate: end };
+  }
+
+  const normalized = trimmed.toLowerCase().replace(/\s+/g, "");
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  if (normalized === "ytd") {
+    const startOfYear = new Date(today.getFullYear(), 0, 1);
+    return { startDate: formatIsoDate(startOfYear), endDate: formatIsoDate(today) };
+  }
+
+  const durationMatch = normalized.match(
+    /^(\d+)(d|day|days|w|week|weeks|m|mo|month|months|y|yr|year|years)$/,
+  );
+  if (durationMatch) {
+    const amount = Number(durationMatch[1]);
+    const unit = durationMatch[2];
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error("Relative periods must be positive numbers.");
+    }
+    const start = new Date(today);
+    if (["d", "day", "days"].includes(unit)) {
+      start.setDate(start.getDate() - amount);
+    } else if (["w", "week", "weeks"].includes(unit)) {
+      start.setDate(start.getDate() - amount * 7);
+    } else if (["m", "mo", "month", "months"].includes(unit)) {
+      start.setMonth(start.getMonth() - amount);
+    } else if (["y", "yr", "year", "years"].includes(unit)) {
+      start.setFullYear(start.getFullYear() - amount);
+    }
+    if (start > today) {
+      throw new Error("Computed start date falls after the end date.");
+    }
+    return { startDate: formatIsoDate(start), endDate: formatIsoDate(today) };
+  }
+
+  throw new Error(
+    "Enter either two ISO dates (YYYY-MM-DD) or a relative duration like '6mo' or '1y'.",
+  );
+};
 
 const SummaryCard: React.FC<{ result: BacktestResult }> = ({ result }) => {
   const { summary } = result;
@@ -432,9 +499,8 @@ const StrategyCharts: React.FC<StrategyChartsProps> = ({
 };
 
 export const App: React.FC = () => {
-  const [symbols, setSymbols] = useState<SymbolInfo[]>([]);
-  const [selection, setSelection] = useState<string>("");
-  const [loadState, setLoadState] = useState<LoadState>("idle");
+  const [backtestTicker, setBacktestTicker] = useState<string>("NHY");
+  const [backtestRange, setBacktestRange] = useState<string>("1y");
   const [backtestState, setBacktestState] = useState<LoadState>("idle");
   const [error, setError] = useState<FetchError | null>(null);
   const [result, setResult] = useState<BacktestResult | null>(null);
@@ -451,38 +517,48 @@ export const App: React.FC = () => {
     benchmark: true,
   });
 
-  useEffect(() => {
-    const load = async () => {
-      setLoadState("loading");
-      try {
-        const response = await fetch("/api/symbols");
-        if (!response.ok) {
-          throw new Error(`Failed to load symbols (${response.status})`);
-        }
-        const payload: SymbolInfo[] = await response.json();
-        setSymbols(payload);
-        setSelection(payload[0]?.symbol ?? "");
-        setLoadState("success");
-      } catch (err) {
-        setLoadState("error");
-        setError({ message: err instanceof Error ? err.message : "Unknown error" });
-      }
-    };
-    load();
-  }, []);
-
-  const runBacktest = async (symbol: string) => {
+  const runBacktest = async (payload: BacktestRequestPayload) => {
     setBacktestState("loading");
     setError(null);
     try {
-      const payload = await runSmaBacktest(symbol);
-      setResult(payload);
+      const response = await fetch("/api/backtest", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to run backtest (${response.status})`);
+      }
+      const json: BacktestResult = await response.json();
+      setResult(json);
       setBacktestState("success");
     } catch (err) {
       setBacktestState("error");
       setError({ message: err instanceof Error ? err.message : "Unknown error" });
     }
   };
+
+  useEffect(() => {
+    const ticker = backtestTicker.trim();
+    if (!ticker) {
+      return;
+    }
+    try {
+      const { startDate, endDate } = parseBacktestRange(backtestRange);
+      runBacktest({
+        ticker: ticker.toUpperCase(),
+        startDate,
+        endDate,
+        interval: BACKTEST_INTERVAL,
+      });
+    } catch (err) {
+      setBacktestState("error");
+      setError({ message: err instanceof Error ? err.message : "Invalid date range" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const toggleDataPoint = (point: string) => {
     setSelectedDataPoints((prev) => {
@@ -542,17 +618,13 @@ export const App: React.FC = () => {
   };
 
   useEffect(() => {
-    if (selection) {
-      runBacktest(selection);
+    if (result?.symbol) {
+      setVisibleStrategies({ strategy: true, benchmark: true });
+      setDateRange("156w");
     }
-  }, [selection]);
+  }, [result?.symbol]);
 
-  useEffect(() => {
-    setVisibleStrategies({ strategy: true, benchmark: true });
-    setDateRange("156w");
-  }, [selection]);
-
-  const isLoading = loadState === "loading" || backtestState === "loading";
+  const isLoading = backtestState === "loading";
 
   const rangeOption = useMemo(() => {
     return (
@@ -731,34 +803,58 @@ export const App: React.FC = () => {
 
         <section className="card">
           <h2>Run backtest</h2>
-          {loadState === "loading" && <p>Loading symbols…</p>}
-          {loadState === "error" && <p className="error">{error?.message ?? "Failed to load symbols"}</p>}
-          {loadState === "success" && (
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (selection) {
-                  runBacktest(selection);
-                }
-              }}
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              const ticker = backtestTicker.trim();
+              if (!ticker) {
+                setBacktestState("error");
+                setError({ message: "Please enter a ticker symbol." });
+                return;
+              }
+              try {
+                const { startDate, endDate } = parseBacktestRange(backtestRange);
+                runBacktest({
+                  ticker: ticker.toUpperCase(),
+                  startDate,
+                  endDate,
+                  interval: BACKTEST_INTERVAL,
+                });
+              } catch (err) {
+                setBacktestState("error");
+                setError({
+                  message:
+                    err instanceof Error
+                      ? err.message
+                      : "Enter dates as YYYY-MM-DD to YYYY-MM-DD or a relative period like 1y.",
+                });
+              }
+            }}
+            className="stacked-form"
+          >
+            <label htmlFor="backtest-ticker">Ticker</label>
+            <input
+              id="backtest-ticker"
+              type="text"
+              value={backtestTicker}
+              onChange={(event) => setBacktestTicker(event.target.value)}
+              placeholder="NHY"
+            />
+            <label htmlFor="backtest-range">Range</label>
+            <input
+              id="backtest-range"
+              type="text"
+              value={backtestRange}
+              onChange={(event) => setBacktestRange(event.target.value)}
+              placeholder="2023-01-01 to 2023-12-31 or 1y"
+            />
+            <button
+              type="submit"
+              disabled={isLoading || !backtestTicker.trim() || !backtestRange.trim()}
             >
-              <label htmlFor="symbol">Ticker</label>
-              <select
-                id="symbol"
-                value={selection}
-                onChange={(event) => setSelection(event.target.value)}
-              >
-                {symbols.map((info) => (
-                  <option key={info.symbol} value={info.symbol}>
-                    {info.symbol} — {info.name}
-                  </option>
-                ))}
-              </select>
-              <button type="submit" disabled={!selection || isLoading}>
-                {backtestState === "loading" ? "Running…" : "Run backtest"}
-              </button>
-            </form>
-          )}
+              {backtestState === "loading" ? "Running…" : "Run backtest"}
+            </button>
+          </form>
         </section>
 
         {error && backtestState === "error" && (
@@ -769,7 +865,7 @@ export const App: React.FC = () => {
 
         {backtestState === "loading" && (
           <section className="card">
-            <p>Calculating SMA strategy locally…</p>
+            <p>Running backtest…</p>
           </section>
         )}
 
