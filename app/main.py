@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -69,7 +69,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             const symbol = document.getElementById("symbol").value;
             resultsEl.innerHTML = "<em>Running backtest...</em>";
             try {{
-                const response = await fetch("/backtest", {{
+                const response = await fetch("/api/backtest", {{
                     method: "POST",
                     headers: {{
                         "Content-Type": "application/json"
@@ -183,7 +183,7 @@ def index() -> HTMLResponse:
                 const symbol = document.getElementById("symbol").value;
                 resultsEl.innerHTML = "<em>Running backtest...</em>";
                 try {{
-                    const response = await fetch("/backtest", {{
+                    const response = await fetch("/api/backtest", {{
                         method: "POST",
                         headers: {{
                             "Content-Type": "application/json"
