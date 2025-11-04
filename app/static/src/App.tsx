@@ -137,7 +137,7 @@ export const App: React.FC = () => {
     setBacktestState("loading");
     setError(null);
     try {
-      const payload = await Promise.resolve(runSmaBacktest(symbol));
+      const payload = await runSmaBacktest(symbol);
       setResult(payload);
       setBacktestState("success");
     } catch (err) {
