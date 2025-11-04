@@ -53,6 +53,31 @@ react-dom/cjs/react-dom-client.production.js:
    * LICENSE file in the root directory of this source tree.
    *)
 
+@kurkle/color/dist/color.esm.js:
+  (*!
+   * @kurkle/color v0.3.4
+   * https://github.com/kurkle/color#readme
+   * (c) 2024 Jukka Kurkela
+   * Released under the MIT License
+   *)
+
+chart.js/dist/chunks/helpers.dataset.js:
+chart.js/dist/chart.js:
+  (*!
+   * Chart.js v4.5.1
+   * https://www.chartjs.org
+   * (c) 2025 Chart.js Contributors
+   * Released under the MIT License
+   *)
+
+chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.esm.js:
+  (*!
+   * chartjs-adapter-date-fns v3.0.0
+   * https://www.chartjs.org
+   * (c) 2022 chartjs-adapter-date-fns Contributors
+   * Released under the MIT license
+   *)
+
 react/cjs/react-jsx-runtime.production.js:
   (**
    * @license React
