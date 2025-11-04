@@ -62,6 +62,7 @@ label {
 }
 
 select,
+input[type="text"],
 button {
   border-radius: 8px;
   border: 1px solid #d2d6dc;
@@ -85,6 +86,51 @@ button:disabled {
 
 button:not(:disabled):hover {
   background: #1d4ed8;
+}
+
+.stacked-form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.stacked-form label {
+  font-weight: 600;
+}
+
+.stacked-form button {
+  justify-self: start;
+}
+
+.checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+
+.checkbox-group legend {
+  width: 100%;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.checkbox-group label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 500;
+}
+
+.market-data-results {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.market-data-group h4 {
+  margin-top: 0;
+  margin-bottom: 0.75rem;
 }
 
 .metrics {
@@ -218,6 +264,7 @@ th {
   }
 
   select,
+  input[type="text"],
   button {
     width: 100%;
   }
