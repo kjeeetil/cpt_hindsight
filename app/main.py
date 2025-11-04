@@ -98,7 +98,7 @@ def index() -> HTMLResponse:
                             </tr>
                         </thead>
                         <tbody>
-                            ${trades.map(t => `
+                            ${{trades.map(t => `
                                 <tr>
                                     <td>${{t.entry_date}}</td>
                                     <td>${{t.exit_date}}</td>
@@ -107,7 +107,7 @@ def index() -> HTMLResponse:
                                     <td>${{t.shares}}</td>
                                     <td>${{t.pnl}}</td>
                                     <td>${{t.return_pct}}</td>
-                                </tr>`).join("")}
+                                </tr>`).join("")}}
                         </tbody>
                     </table>`
                     : "<p>No completed trades.</p>";
@@ -118,7 +118,7 @@ def index() -> HTMLResponse:
                 `;
 
                 return summaryHtml + curveHtml + tradesHtml;
-            }
+            }}
         </script>
     </body>
     </html>

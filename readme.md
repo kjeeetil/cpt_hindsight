@@ -125,3 +125,14 @@ Web demo (local)
 - Open `http://localhost:8080` and pick one of the pre-configured Oslo Bors tickers (Norsk Hydro, Equinor or Aker ASA).
 - The app generates synthetic weekly OHLC prices, builds simple SMA-crossover signals, and feeds them into `engine.backtest_weekly`.
 - You will see a summary, the latest equity-curve points, and the table of completed trades returned by the engine.
+
+Testing
+-------
+Install development dependencies and run the automated test suite:
+
+```
+pip install -r requirements-dev.txt
+pytest
+```
+
+The suite includes unit tests for the backtesting engine and integration checks for FastAPI endpoints. Deterministic CSV fixtures under `tests/fixtures/` validate strategy outcomes so regressions are easy to spot.
