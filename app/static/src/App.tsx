@@ -8,11 +8,45 @@ type LoadState = "idle" | "loading" | "success" | "error";
 
 type FetchError = { message: string };
 
+type MarketDataRequestPayload = {
+  tickers: string[];
+  period: string;
+  interval: string;
+  dataPoints: string[];
+};
+
+type MarketDataRow = {
+  timestamp: string;
+  [key: string]: number | string;
+};
+
+type MarketDataResponse = {
+  tickers: string[];
+  period: string;
+  interval: string;
+  dataPoints: string[];
+  data: Record<string, MarketDataRow[]>;
+};
+
+const DATA_POINT_OPTIONS = ["Open", "High", "Low", "Close", "Adj Close", "Volume"];
+const PERIOD_OPTIONS = ["1mo", "3mo", "6mo", "1y", "2y", "5y", "ytd", "max"];
+const INTERVAL_OPTIONS = ["1d", "1wk", "1mo"];
+
 const formatNumber = (value: number | undefined, fractionDigits = 2): string => {
   if (typeof value !== "number" || Number.isNaN(value)) {
     return "-";
   }
   return value.toLocaleString(undefined, { maximumFractionDigits: fractionDigits });
+};
+
+const renderDataValue = (value: number | string | undefined): string => {
+  if (typeof value === "number") {
+    return formatNumber(value);
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  return "-";
 };
 
 const SummaryCard: React.FC<{ result: BacktestResult }> = ({ result }) => {
@@ -112,6 +146,13 @@ export const App: React.FC = () => {
   const [backtestState, setBacktestState] = useState<LoadState>("idle");
   const [error, setError] = useState<FetchError | null>(null);
   const [result, setResult] = useState<BacktestResult | null>(null);
+  const [tickerInput, setTickerInput] = useState<string>("NHY");
+  const [period, setPeriod] = useState<string>("1y");
+  const [interval, setInterval] = useState<string>("1d");
+  const [selectedDataPoints, setSelectedDataPoints] = useState<string[]>(DATA_POINT_OPTIONS);
+  const [marketDataState, setMarketDataState] = useState<LoadState>("idle");
+  const [marketDataError, setMarketDataError] = useState<FetchError | null>(null);
+  const [marketData, setMarketData] = useState<MarketDataResponse | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -146,6 +187,63 @@ export const App: React.FC = () => {
     }
   };
 
+  const toggleDataPoint = (point: string) => {
+    setSelectedDataPoints((prev) => {
+      if (prev.includes(point)) {
+        return prev.filter((item) => item !== point);
+      }
+      return [...prev, point];
+    });
+  };
+
+  const requestMarketData = async () => {
+    const tickers = tickerInput
+      .split(/[\s,]+/)
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+
+    if (!tickers.length) {
+      setMarketDataState("error");
+      setMarketDataError({ message: "Please provide at least one ticker symbol." });
+      return;
+    }
+
+    if (!selectedDataPoints.length) {
+      setMarketDataState("error");
+      setMarketDataError({ message: "Select at least one data point to request." });
+      return;
+    }
+
+    setMarketDataState("loading");
+    setMarketDataError(null);
+
+    try {
+      const payload: MarketDataRequestPayload = {
+        tickers,
+        period,
+        interval,
+        dataPoints: selectedDataPoints,
+      };
+      const response = await fetch("/api/market-data", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch market data (${response.status})`);
+      }
+      const json: MarketDataResponse = await response.json();
+      setMarketData(json);
+      setMarketDataState("success");
+    } catch (err) {
+      setMarketData(null);
+      setMarketDataState("error");
+      setMarketDataError({ message: err instanceof Error ? err.message : "Unknown error" });
+    }
+  };
+
   useEffect(() => {
     if (selection) {
       runBacktest(selection);
@@ -161,6 +259,113 @@ export const App: React.FC = () => {
         <p>Client-side SMA crossover sandbox backed by a lightweight FastAPI metadata service.</p>
       </header>
       <main>
+        <section className="card">
+          <h2>Request market data</h2>
+          <form
+            className="stacked-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              requestMarketData();
+            }}
+          >
+            <label htmlFor="tickers">Tickers</label>
+            <input
+              id="tickers"
+              type="text"
+              value={tickerInput}
+              onChange={(event) => setTickerInput(event.target.value)}
+              placeholder="AAPL, MSFT"
+            />
+            <label htmlFor="period">Period</label>
+            <select
+              id="period"
+              value={period}
+              onChange={(event) => setPeriod(event.target.value)}
+            >
+              {PERIOD_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+            <label htmlFor="interval">Frequency</label>
+            <select
+              id="interval"
+              value={interval}
+              onChange={(event) => setInterval(event.target.value)}
+            >
+              {INTERVAL_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+            <fieldset className="checkbox-group">
+              <legend>Data points</legend>
+              {DATA_POINT_OPTIONS.map((option) => (
+                <label key={option}>
+                  <input
+                    type="checkbox"
+                    checked={selectedDataPoints.includes(option)}
+                    onChange={() => toggleDataPoint(option)}
+                  />
+                  {option}
+                </label>
+              ))}
+            </fieldset>
+            <button type="submit" disabled={marketDataState === "loading"}>
+              {marketDataState === "loading" ? "Requesting…" : "Fetch data"}
+            </button>
+          </form>
+          {marketDataState === "error" && marketDataError && (
+            <p className="error">{marketDataError.message}</p>
+          )}
+          {marketDataState === "loading" && <p>Submitting request…</p>}
+          {marketDataState === "success" && marketData &&
+            !Object.values(marketData.data).some((rows) => rows.length) && (
+              <p>No data returned for the selected parameters.</p>
+            )}
+        </section>
+
+        {marketData && marketDataState === "success" && (
+          <section className="card">
+            <h3>Market data results</h3>
+            <div className="market-data-results">
+              {Object.entries(marketData.data).map(([ticker, rows]) => (
+                <div key={ticker} className="market-data-group">
+                  <h4>{ticker}</h4>
+                  {rows.length === 0 ? (
+                    <p>No data returned for this ticker.</p>
+                  ) : (
+                    <div className="table-wrapper">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Timestamp</th>
+                            {marketData.dataPoints.map((point) => (
+                              <th key={point}>{point}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.slice(0, 100).map((row) => (
+                            <tr key={`${ticker}-${row.timestamp}`}>
+                              <td>{row.timestamp}</td>
+                              {marketData.dataPoints.map((point) => (
+                                <td key={point}>{renderDataValue(row[point])}</td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         <section className="card">
           <h2>Run backtest</h2>
           {loadState === "loading" && <p>Loading symbols…</p>}

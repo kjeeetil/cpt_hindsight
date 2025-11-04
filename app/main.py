@@ -4,6 +4,9 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
+from pydantic import BaseModel, Field
+
+from .market_data import MarketDataRequest as MarketDataParams, fetch_market_data
 from fastapi.staticfiles import StaticFiles
 
 app = FastAPI(title="CPT Hindsight API", version="0.3.0")
@@ -16,6 +19,17 @@ AVAILABLE_SYMBOLS = {
     "EQNR": "Equinor",
     "AKER": "Aker ASA",
 }
+
+
+class MarketDataRequest(BaseModel):
+    tickers: list[str]
+    period: str
+    interval: str
+    data_points: list[str] = Field(alias="dataPoints")
+
+    model_config = {
+        "populate_by_name": True,
+    }
 
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=STATIC_DIR, html=True), name="static")
@@ -33,6 +47,34 @@ def index() -> FileResponse:
 def list_symbols() -> JSONResponse:
     return JSONResponse(
         [{"symbol": symbol, "name": name} for symbol, name in AVAILABLE_SYMBOLS.items()]
+    )
+
+
+@app.post(f"{API_PREFIX}/market-data")
+def get_market_data(request: MarketDataRequest) -> JSONResponse:
+    params = MarketDataParams(
+        tickers=request.tickers,
+        period=request.period,
+        interval=request.interval,
+        data_points=request.data_points,
+    )
+    try:
+        dataset = fetch_market_data(params)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:  # pragma: no cover - unexpected errors
+        raise HTTPException(status_code=500, detail="Unexpected error retrieving market data.") from exc
+
+    return JSONResponse(
+        {
+            "tickers": request.tickers,
+            "period": request.period,
+            "interval": request.interval,
+            "dataPoints": request.data_points,
+            "data": dataset,
+        }
     )
 
 
