@@ -118,3 +118,10 @@ The repository now includes a minimal container + Cloud Build scaffold for deplo
    - Prune older image digests, keeping only the `_MAX_IMAGE_VERSIONS` most recent copies so storage does not grow without bound.
 
 Adjust the substitutions to match your project naming, and update the `_MAX_IMAGE_VERSIONS` value if you want to retain more or fewer historical artifacts.
+
+Web demo (local)
+----------------
+- Run `uvicorn app.main:app --port 8080 --reload`.
+- Open `http://localhost:8080` and pick one of the pre-configured Oslo Bors tickers (Norsk Hydro, Equinor or Aker ASA).
+- The app generates synthetic weekly OHLC prices, builds simple SMA-crossover signals, and feeds them into `engine.backtest_weekly`.
+- You will see a summary, the latest equity-curve points, and the table of completed trades returned by the engine.

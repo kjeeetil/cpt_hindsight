@@ -1,3 +1,50 @@
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+from typing import Dict, List, Optional
+
+import numpy as np
+import pandas as pd
+
+
+@dataclass
+class Trade:
+    entry_index: pd.Timestamp
+    entry_price: float
+    exit_index: pd.Timestamp
+    exit_price: float
+    shares: float
+    pnl: float
+    return_pct: float
+
+
+@dataclass
+class Signals:
+    long_entry: pd.Series
+    short_entry: pd.Series
+    long_exit: pd.Series
+    short_exit: pd.Series
+
+
+INITIAL_EQUITY: float = 100_000.0
+TARGET_ANNUAL_VOL: float = 0.20
+
+
+def atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int) -> pd.Series:
+    """Average True Range helper."""
+    high_low = (high - low).abs()
+    high_close = (high - close.shift(1)).abs()
+    low_close = (low - close.shift(1)).abs()
+    tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+    return tr.rolling(period, min_periods=1).mean()
+
+
+def apply_cost(price: float, side: str) -> float:
+    """Placeholder transaction cost model."""
+    return float(price)
+
+
 def backtest_weekly(
     w: pd.DataFrame,
     signals: Signals,
