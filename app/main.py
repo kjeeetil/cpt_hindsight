@@ -3,10 +3,13 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
+from datetime import date
+
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
+from .backtest import run_backtest as execute_backtest
 from .market_data import MarketDataRequest as MarketDataParams, fetch_market_data
 from fastapi.staticfiles import StaticFiles
 
@@ -32,6 +35,37 @@ class MarketDataRequest(BaseModel):
     model_config = {
         "populate_by_name": True,
     }
+
+
+class BacktestRequest(BaseModel):
+    ticker: str
+    start_date: date = Field(alias="startDate")
+    end_date: date = Field(alias="endDate")
+    interval: str
+
+    model_config = {"populate_by_name": True}
+
+    @field_validator("ticker")
+    @classmethod
+    def _normalise_ticker(cls, value: str) -> str:
+        normalised = value.strip().upper()
+        if not normalised:
+            raise ValueError("Ticker must not be empty.")
+        return normalised
+
+    @field_validator("interval")
+    @classmethod
+    def _validate_interval(cls, value: str) -> str:
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("Interval must not be empty.")
+        return trimmed
+
+    @model_validator(mode="after")
+    def _validate_dates(self) -> "BacktestRequest":
+        if self.start_date > self.end_date:
+            raise ValueError("startDate must be on or before endDate.")
+        return self
 
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=STATIC_DIR, html=True), name="static")
@@ -76,7 +110,28 @@ def get_market_data(request: MarketDataRequest) -> JSONResponse:
             "interval": request.interval,
             "dataPoints": request.data_points,
             "data": dataset,
-        })
+        }
+    )
+
+
+@app.post(f"{API_PREFIX}/backtest")
+def run_backtest(request: BacktestRequest) -> JSONResponse:
+    try:
+        payload = execute_backtest(
+            request.ticker,
+            request.start_date,
+            request.end_date,
+            request.interval,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:  # pragma: no cover - unexpected errors
+        raise HTTPException(status_code=500, detail="Unexpected error running backtest.") from exc
+    return JSONResponse(payload)
+
+
 def _load_history(symbol: str) -> list[dict[str, object]]:
     csv_path = DATA_DIR / f"{symbol}.csv"
     if not csv_path.exists():
