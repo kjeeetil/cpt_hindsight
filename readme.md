@@ -15,7 +15,6 @@ Architecture
 ------------
 - **Backend**: FastAPI application (`app/main.py`) that mounts compiled assets under `/static`, serves the SPA entry point on `/`, and exposes JSON endpoints under `/api/*`.
   - `/api/symbols` returns the curated ticker list.
-  - `/api/backtest` keeps the legacy Python backtester available for server-side parity or heavier workloads.
   - `/healthz` is retained for deployment probes.
 - **Frontend**: React SPA bundled with esbuild. Source files live in `app/static/src/` and compile into `app/static/dist/` via `npm run build`.
 - **Simulation utilities**: `app/static/src/sma.ts` ports the minimal SMA crossover strategy to TypeScript so the browser can generate synthetic data, run the crossover logic locally, and render the results without waiting on the API.
@@ -35,7 +34,7 @@ Development workflow
 
 Backtesting strategies
 ----------------------
-- **Simple Moving Average (SMA) crossover**: Implemented in Python (`app/backtester.py`) and TypeScript (`app/static/src/sma.ts`).
+- **Simple Moving Average (SMA) crossover**: Implemented in TypeScript (`app/static/src/sma.ts`) for the client-side sandbox while `engine.py` retains the canonical Python version for regression tests.
 - Future strategies can be added on the server for canonical results and selectively ported to TypeScript for in-browser experimentation.
 
 Roadmap (prioritized)
@@ -97,7 +96,7 @@ Web demo (local)
 ----------------
 - Run `uvicorn app.main:app --port 8080 --reload`.
 - Open `http://localhost:8080` and pick one of the pre-configured Oslo Bors tickers (Norsk Hydro, Equinor or Aker ASA).
-- The app generates synthetic weekly OHLC prices, builds simple SMA-crossover signals, and feeds them into `engine.backtest_weekly`.
+- The app generates synthetic weekly OHLC prices, builds simple SMA-crossover signals, and evaluates them with the TypeScript backtester bundled in the SPA.
 - You will see a summary, the latest equity-curve points, and the table of completed trades returned by the engine.
 
 Testing

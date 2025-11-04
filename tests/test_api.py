@@ -7,7 +7,7 @@ client = TestClient(app)
 
 
 def test_symbols_endpoint_lists_available_symbols():
-    response = client.get("/symbols")
+    response = client.get("/api/symbols")
 
     assert response.status_code == 200
     payload = response.json()
