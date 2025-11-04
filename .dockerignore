@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.venv/
+.git/
+.gitignore
+README.md
+README.MD
+*.log
+.pytest_cache/
+*.sqlite3

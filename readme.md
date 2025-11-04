@@ -83,3 +83,38 @@ How to proceed now
 
 License & contribution
 - Add your preferred license and contribution guidelines in repo root when ready. Keep the readme focused on scope and roadmap for now.
+
+Deployment (Google Cloud)
+-------------------------
+The repository now includes a minimal container + Cloud Build scaffold for deploying the API skeleton to Cloud Run.
+
+1. Create the Artifact Registry repository and Cloud Run service ahead of time:
+   ```
+   gcloud artifacts repositories create cpt-hindsight \
+     --project "${PROJECT_ID}" \
+     --repository-format=docker \
+     --location=europe-west1
+
+   gcloud run deploy cpt-hindsight \
+     --project "${PROJECT_ID}" \
+     --image="europe-west1-docker.pkg.dev/${PROJECT_ID}/cpt-hindsight/cpt-hindsight:bootstrap" \
+     --region=europe-west1 \
+     --platform=managed \
+     --allow-unauthenticated
+   ```
+   Replace names/regions if you want a different location or service identifier.
+
+2. Submit builds with the provided pipeline:
+   ```
+   gcloud builds submit \
+     --config=cloudbuild.yaml \
+     --substitutions=_LOCATION=europe-west1,_REPOSITORY=cpt-hindsight,_SERVICE_NAME=cpt-hindsight,_MAX_IMAGE_VERSIONS=5
+   ```
+
+3. The pipeline will:
+   - Build the container from the Dockerfile.
+   - Push it to Artifact Registry under `${_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:${SHORT_SHA}`.
+   - Deploy the image to Cloud Run.
+   - Prune older image digests, keeping only the `_MAX_IMAGE_VERSIONS` most recent copies so storage does not grow without bound.
+
+Adjust the substitutions to match your project naming, and update the `_MAX_IMAGE_VERSIONS` value if you want to retain more or fewer historical artifacts.

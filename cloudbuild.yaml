@@ -1,0 +1,74 @@
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+substitutions:
+  _LOCATION: europe-west1
+  _REPOSITORY: cpt-hindsight
+  _SERVICE_NAME: cpt-hindsight
+  _MAX_IMAGE_VERSIONS: "5"
+
+steps:
+  - id: "Build container image"
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - "-t"
+      - "${_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:${SHORT_SHA}"
+      - "."
+
+  - id: "Push image to Artifact Registry"
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - "${_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:${SHORT_SHA}"
+
+  - id: "Deploy to Cloud Run"
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        IMAGE_URI="${_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:${SHORT_SHA}"
+        gcloud run deploy "${_SERVICE_NAME}" \
+          --image="${IMAGE_URI}" \
+          --project="${PROJECT_ID}" \
+          --region="${_LOCATION}" \
+          --platform=managed \
+          --allow-unauthenticated \
+          --quiet
+
+  - id: "Cleanup old image revisions"
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        REPO_URI="${_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}"
+        MAX="${_MAX_IMAGE_VERSIONS}"
+        echo "Ensuring only ${MAX} recent images are kept in ${REPO_URI}"
+        mapfile -t DIGESTS < <(gcloud artifacts docker images list "${REPO_URI}" \
+          --project="${PROJECT_ID}" \
+          --format="value(digest)" \
+          --sort-by=~UPDATE_TIME \
+          --limit=100 || true)
+        TOTAL="${#DIGESTS[@]}"
+        if [[ "${TOTAL}" -le "${MAX}" ]]; then
+          echo "Found ${TOTAL} digests, nothing to clean."
+          exit 0
+        fi
+        for (( index=MAX; index<${TOTAL}; index++ )); do
+          DIGEST="${DIGESTS[$index]}"
+          if [[ -z "${DIGEST}" ]]; then
+            continue
+          fi
+          echo "Deleting old digest ${DIGEST}"
+          gcloud artifacts docker images delete "${REPO_URI}@${DIGEST}" \
+            --project="${PROJECT_ID}" \
+            --delete-tags \
+            --quiet || true
+        done
+
+images:
+  - "${_LOCATION}-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/${_SERVICE_NAME}:${SHORT_SHA}"
